@@ -231,7 +231,7 @@ function inspect_dir() {
 	while [ ${CMD} != "exit" ]; do
 		CMD="a"
 		ARG=""
-		read -p "${WINDOWS_SOURCE_DIREXPORT_DIR} >>> " CMD
+		read -p "${SOURCE_DIR} >>> " CMD
 		CMD=${CMD,,}									# Trasformo tutti i caratteri della stringa in caratteri minuscoli
 		
 		read -ra CMD_ARRAY <<< "$CMD"                             
