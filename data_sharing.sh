@@ -183,9 +183,9 @@ function import_data() {
         echo -e "${WARN} .gitignore files found in the directory structure."
         echo ""
         echo "Choose how to proceed:"
-        echo "1) Copy everything (ignore .gitignore rules)"
-        echo "2) Respect .gitignore rules"
-        echo "3) Respect .gitignore rules with verbose output"
+        echo " 1) Copy everything (ignore .gitignore rules)"
+        echo " 2) Respect .gitignore rules"
+        echo " 3) Respect .gitignore rules with verbose output"
         echo ""
         local valid_choice=false
         while [ "${valid_choice}" = "false" ]; do
@@ -309,11 +309,11 @@ function inspect_dir() {
 		CMD="a"
 		ARG=""
 		read -p "${SOURCE_DIR} >>> " CMD
-		CMD=${CMD,,}									# Trasformo tutti i caratteri della stringa in caratteri minuscoli
 		
 		read -ra CMD_ARRAY <<< "$CMD"                             
         if [ ${#CMD_ARRAY[@]} -gt 1 ]; then
             CMD="${CMD_ARRAY[0]}"
+			CMD=${CMD,,}									# Trasformo tutti i caratteri della stringa in caratteri minuscoli
             ARG="${SOURCE_DIR}/${CMD_ARRAY[1]}"
         fi
 		
@@ -422,7 +422,6 @@ function get_relative_path() {
     local base="$2"
     echo "${path#"${base}/"}"
 }
-
 
 # Funzione per scansionare una directory alla ricerca di file .gitignore
 # Usage:
