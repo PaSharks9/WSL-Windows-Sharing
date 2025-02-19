@@ -2,12 +2,22 @@
 
 # Script per fare l'import o l'export di dati dati tra WSL e Windows. 
 # Utilizzo:
-# 	$ windws_sharing <windows_EXPORT_dir>
+# 	$ data_sharing <windows_SOURCE_dir> <windows_DEST_dir> <linux_SOURCE_dir> <linux_DEST_dir>
 #
-# Se allo script non viene passato nessun parametro, il valore di default è il seguente "/mnt/c/Users/pasquall/Desktop/linux_sharing"
-#
+# Se allo script non viene passato nessun parametro:
+# - Valori di default delle cartelle Windows
+# 	1) "/mnt/c/Users/<whoami>/Desktop/linux_sharing/export-zone"
+#	2) "/mnt/c/Users/<whoami>/Desktop/linux_sharing/land-zone"
+# 
+# - Valori di default delle cartelle Linux
+#	1) "/home/<whoami>/windows-hub/export-zone"
+#	2) "/home/<whoami>/windows-hub/land-zone"
 
-# ============================================ FUNZIONI ============================================
+# ============================================ Menu ==================================================
+
+# Stampa il menu principale
+# Usage:
+#	$ main_menu
 function main_menu() {
 	local CHOICE="0" 
 	echo ""
@@ -15,8 +25,12 @@ function main_menu() {
 	print_header "Linux/Windows Sharing Hub"
 	echo ""
 	echo -e " \e[33m* Working Dir\e[0m: $(pwd)"
-	echo -e " \e[33m* Source Default Directory\e[0m: ${WINDOWS_IMPORT_DIR}"
-	echo -e " \e[33m* Destination Default Directory\e[0m: ${WINDOWS_EXPORT_DIR}"
+	echo ""
+	echo -e " \e[33m* Windows Source Default Directory\e[0m: ${WINDOWS_SOURCE_DIR}"
+	echo -e " \e[33m* Windows Destination Default Directory\e[0m: ${WINDOWS_DEST_DIR}"
+	echo ""
+	echo -e " \e[33m* Linux Source Default Directory\e[0m: ${LINUX_SOURCE_DIR}"
+	echo -e " \e[33m* Linux Destination Default Directory\e[0m: ${LINUX_DEST_DIR}"
 	echo ""
 	print_header ""
 
@@ -40,6 +54,138 @@ function main_menu() {
 				echo "";;
 		esac
 	done
+}
+
+# Funzione per fare l'import/export dei dati tra wsl e windows
+# Usage:
+# 	$ transfer_data <source_dir> <dest_dir>	<mode>
+function transfer_data_menu() {
+
+	local CHOICE="a"
+	local INSPECT="0"
+
+	local SOURCE_DIR="${1}"
+	local DEST_DIR="${2}"
+	local MODE="${3}"
+
+	if [ ${MODE} == "import" ]; then
+
+		local TEXT="Change Windows Source Directory"
+		local MENU_TYPE="Import from Windows Menu"
+	else
+		local TEXT="Change Linux Source Directory"
+		local MENU_TYPE="Export to Windows Menu"
+	fi
+
+	while [[ ${CHOICE} != "0" ]]; do
+		echo ""
+		print_header "${MENU_TYPE}"
+		echo ""
+
+		# Contenuto cartelle
+		show_content ${SOURCE_DIR}
+		print_header ""
+		
+		echo ""
+		echo -e "\e[33mChoose: \e[0m"
+		echo ""		
+		echo -e " 1) \e[34mFile\e[0m"
+		echo -e " 2) \e[34mDirectory\e[0m"
+		echo -e " 3) \e[34mInspect Source Directory\e[0m"
+		echo -e " 4) \e[34m${TEXT}\e[0m"
+		echo ""
+		echo -e " \e[31mb) Back\e[0m"
+		echo ""
+		read -p "Chose: " CHOICE
+		echo ""
+		case "${CHOICE}" in
+			1)  
+				print_header ""
+				echo ""
+				read -p " Filename to copy (relative path): " FILENAME
+				import_data ${FILENAME} "-f" ${SOURCE_DIR} ${DEST_DIR}
+				CHOICE=$? 
+				;;
+			2) 	print_header ""
+				echo ""
+				read -p " Directory to copy (relative path): " DIRNAME
+				import_data ${DIRNAME} "-d" ${SOURCE_DIR} ${DEST_DIR}
+				CHOICE=$?
+				;;
+			3)  inspect_dir "${SOURCE_DIR}"
+				RES=$?
+				if [ $RES -ne 0 ]; then
+					echo -e "${ERR} function inspect_dir error."
+				fi
+				;;
+			4)	read -p " Insert new source dir path: " SOURCE_DIR
+				;;
+			b|B) break ;;
+			*)  echo "Wrong input. Insert a number between 1 or 2" 
+				echo "" 
+				;;
+		esac
+	done
+
+}
+
+# ===================================== Menu Functions ===============================================
+# Import di un file/directory
+# Usage:
+#	$ import_data <path> <-d|-f> <source_dir> <dest_dir>
+function import_data() {
+	local INSERT=0
+	local LOCAL_PATH="$(pwd)/landing-zone"
+
+	local SOURCE_DIR="${3}"
+	local DEST_DIR="${4}"
+
+	check_file "${SOURCE_DIR}/${1}" "${2}"
+	RES=$?
+	if [[ $RES -ne 0 ]]; then 																		    # Vuol dire che il file non è stato trovato
+		return 0
+	fi
+
+	echo ""
+	while [[ ${INSERT} == 0 ]]; do
+		
+		echo " Destination base path: ${DEST_DIR}"
+		echo ""
+		read -p " Insert destination path (absolute): " ABS_DEST_PATH
+		echo -e " Insered path: \e[33m${ABS_DEST_PATH}/.\e[0m"
+		read -p " Is that correct (y|n) ?  " CHOICE
+		echo ""
+		case ${CHOICE} in 
+			y|Y) INSERT=1
+				 if [ ! "${2}" "${ABS_DEST_PATH}" -a "${2}" == "-d" ]; then								# Se la cartella non esiste, la creo
+					echo -e "${INFO} Dir ${ABS_DEST_PATH} not existing. Creating..."
+					mkdir -p "${ABS_DEST_PATH}"
+					if [ $? -ne 0 ]; then
+						echo -e "${ERR} Creating dir ${ABS_DEST_PATH}. Exit..."
+						exit 1
+					else
+						echo -e "${SUCC} Dir ${ABS_DEST_PATH} successfully created."
+					fi
+				 else
+					echo -e "${INFO} ${ABS_DEST_PATH} exists."
+				 fi
+				 ;;
+			*) ;;
+		esac
+		echo ""
+	done
+
+	cp -r "${SOURCE_DIR}/${1}" "${ABS_DEST_PATH}"
+	RES=$?
+
+	if [ $? -ne 0 ]; then
+		echo -e "${ERR} Copying ${1} to ${ABS_DEST_PATH}" 
+		echo -e "$(print_date): [ERR] Copying ${SOURCE_DIR}/${1} to ${ABS_DEST_PATH}" >> "${LOG_FILE}"
+		exit 2
+	else
+		echo -e "${SUCC} Data imported successfully" 
+		echo -e "$(print_date): [SUCC] Data imported successfully from ${SOURCE_DIR}/${1} to ${ABS_DEST_PATH}" >> "${LOG_FILE}"
+	fi	
 }
 
 # Mostra il contenuto della cartella passata come parametro
@@ -136,137 +282,7 @@ function check_file() {
 	fi
 }
 
-# Import di un file/directory
-# Usage:
-#	$ import_data <path> <-d|-f> <source_dir> <dest_dir>
-function import_data() {
-	local INSERT=0
-	local LOCAL_PATH="$(pwd)/landing-zone"
-
-	local SOURCE_DIR="${3}"
-	local DEST_DIR="${4}"
-
-	check_file "${SOURCE_DIR}/${1}" "${2}"
-	RES=$?
-	if [[ $RES -ne 0 ]]; then 																		    # Vuol dire che il file non è stato trovato
-		return 0
-	fi
-
-	echo ""
-	while [[ ${INSERT} == 0 ]]; do
-		
-		echo " Destination base path: ${DEST_DIR}"
-		echo ""
-		read -p " Insert destination path (absolute): " ABS_DEST_PATH
-		echo -e " Insered path: \e[33m${ABS_DEST_PATH}/.\e[0m"
-		read -p " Is that correct (y|n) ?  " CHOICE
-		echo ""
-		case ${CHOICE} in 
-			y|Y) INSERT=1
-				 if [ ! "${2}" "${ABS_DEST_PATH}" -a "${2}" == "-d" ]; then								# Se la cartella non esiste, la creo
-					echo -e "${INFO} Dir ${ABS_DEST_PATH} not existing. Creating..."
-					mkdir -p "${ABS_DEST_PATH}"
-					if [ $? -ne 0 ]; then
-						echo -e "${ERR} Creating dir ${ABS_DEST_PATH}. Exit..."
-						exit 1
-					else
-						echo -e "${SUCC} Dir ${ABS_DEST_PATH} successfully created."
-					fi
-				 else
-					echo -e "${INFO} ${ABS_DEST_PATH} exists."
-				 fi
-				 ;;
-			*) ;;
-		esac
-		echo ""
-	done
-
-	cp -r "${SOURCE_DIR}/${1}" "${ABS_DEST_PATH}"
-	RES=$?
-
-	if [ $? -ne 0 ]; then
-		echo -e "${ERR} Copying ${1} to ${ABS_DEST_PATH}" 
-		echo -e "$(print_date): [ERR] Copying ${1} to ${ABS_DEST_PATH}" >> "${LOG_FILE}"
-		exit 2
-	else
-		echo -e "${SUCC} Data imported successfully" 
-		echo -e "$(print_date): [SUCC] Data imported successfully from ${SOURCE_DIR} to ${ABS_DEST_PATH}" >> "${LOG_FILE}"
-	fi	
-}
-
-# Funzione per fare l'import/export dei dati tra wsl e windows
-# Usage:
-# 	$ transfer_data <source_dir> <dest_dir>	<mode>
-function transfer_data() {
-
-	local CHOICE="a"
-	local INSPECT="0"
-
-	local SOURCE_DIR="${1}"
-	local DEST_DIR="${2}"
-	local MODE="${3}"
-
-	if [ ${MODE} == "import" ]; then
-
-		local TEXT="Change Windows Source Directory"
-		local MENU_TYPE="Import from Windows Menu"
-	else
-		local TEXT="Change Linux Source Directory"
-		local MENU_TYPE="Export to Windows Menu"
-	fi
-
-	while [[ ${CHOICE} != "0" ]]; do
-		echo ""
-		print_header "${MENU_TYPE}"
-		echo ""
-
-		# Contenuto cartelle
-		show_content ${SOURCE_DIR}
-		print_header ""
-		
-		echo ""
-		echo -e "\e[33mChoose: \e[0m"
-		echo ""		
-		echo -e " 1) \e[34mFile\e[0m"
-		echo -e " 2) \e[34mDirectory\e[0m"
-		echo -e " 3) \e[34mInspect Source Directory\e[0m"
-		echo -e " 4) \e[34m${TEXT}\e[0m"
-		echo ""
-		echo -e " \e[31mb) Back\e[0m"
-		echo ""
-		read -p "Chose: " CHOICE
-		echo ""
-		case "${CHOICE}" in
-			1)  
-				print_header ""
-				echo ""
-				read -p " Filename to copy (relative path): " FILENAME
-				import_data ${FILENAME} "-f" ${SOURCE_DIR} ${DEST_DIR}
-				CHOICE=$? 
-				;;
-			2) 	print_header ""
-				echo ""
-				read -p " Directory to copy (relative path): " DIRNAME
-				import_data ${DIRNAME} "-d" ${SOURCE_DIR} ${DEST_DIR}
-				CHOICE=$?
-				;;
-			3)  inspect_dir "${SOURCE_DIR}"
-				RES=$?
-				if [ $RES -ne 0 ]; then
-					echo -e "${ERR} function inspect_dir error."
-				fi
-				;;
-			4)	read -p " Insert new source dir path: " SOURCE_DIR
-				;;
-			b|B) break ;;
-			*)  echo "Wrong input. Insert a number between 1 or 2" 
-				echo "" 
-				;;
-		esac
-	done
-
-}
-
+# ==================================== Utilities Functions ===========================================
 # Funzione per inizializzare il file di log
 # Usage:
 #	$ init_log_file
@@ -290,10 +306,11 @@ function print_date(){
     echo -e "($(date '+%Y-%m-%d %H:%M:%S'))"
 }
 
-# Stampa l'header dei menù mantenendo una lunghezza massima di 100 caratteri a prescindere dal titolo del menù, il quale sarà centrato
+# Stampa l'header dei menù mantenendo una lunghezza massima di 100 caratteri a prescindere 
+# dal titolo del menù, il quale sarà centrato
 # Usage: 
 #	$ print_header <message>
-print_header() {
+function print_header() {
     local title="$1"
     local total_length=100
     
@@ -331,8 +348,12 @@ WARN="\e[33m[WARN]\e[0m"
 SUCC="\e[32m[SUCC]\e[0m"
 INFO="\e[34m[INFO]\e[0m"
 
-WINDOWS_IMPORT_DIR=${1:-"/mnt/c/Users/$(whoami)/Desktop/linux_sharing/export-zone"}							    # Cartella base Windows dalla quale fare l'import
-WINDOWS_EXPORT_DIR=${1:-"/mnt/c/Users/$(whoami)/Desktop/linux_sharing/landing-zone"}							# Cartella base Windows dalla quale fare l'export
+WINDOWS_SOURCE_DIR=${1:-"/mnt/c/Users/$(whoami)/Desktop/linux_sharing/export-zone"}							    # Cartella base Windows dalla quale fare l'import
+WINDOWS_DEST_DIR=${2:-"/mnt/c/Users/$(whoami)/Desktop/linux_sharing/land-zone"}									# Cartella base Windows dalla quale fare l'export
+
+LINUX_SOURCE_DIR=${3:-"$(pwd)/export-zone"}																		# Cartella base Linux dalla quale fare l'import
+LINUX_DEST_DIR=${4:-"$(pwd)/land-zone"}																			# Cartella base Linux dalla quale fare l'export
+
 LOG_DIR="logs/"
 LOG_FILE="${LOG_DIR}/$(date +%Y_%m_%d).log"																	    # Imposto il nome del file di log in base alla data corrente
 
@@ -359,8 +380,8 @@ while [ "${SELECTION}" = "0" ]; do
 	RES=$?
 
 	case ${RES} in
-		1) transfer_data ${WINDOWS_IMPORT_DIR} "$(pwd)/landing-zone" "import" ;;
-		2) transfer_data "$(pwd)/exporting-zone" ${WINDOWS_EXPORT_DIR} "export" ;;
+		1) transfer_data_menu ${WINDOWS_SOURCE_DIR} ${LINUX_DEST_DIR} "import" ;;
+		2) transfer_data_menu ${LINUX_SOURCE_DIR} ${WINDOWS_DEST_DIR} "export" ;;
 		*) echo -e "${ERR} Wrong input ${RES}. Exit.."
 		   exit 1
 		   ;;
