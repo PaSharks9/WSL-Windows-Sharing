@@ -134,58 +134,135 @@ function transfer_data_menu() {
 # Usage:
 #	$ import_data <path> <-d|-f> <source_dir> <dest_dir>
 function import_data() {
-	local INSERT=0
-	local LOCAL_PATH="$(pwd)/landing-zone"
+    local INSERT=0
+    local LOCAL_PATH="$(pwd)/landing-zone"
 
-	local SOURCE_DIR="${3}"
-	local DEST_DIR="${4}"
+    local SOURCE_DIR="${3}"
+    local DEST_DIR="${4}"
+    local SOURCE_PATH="${SOURCE_DIR}/${1}"
 
-	check_file "${SOURCE_DIR}/${1}" "${2}"
-	RES=$?
-	if [[ $RES -ne 0 ]]; then 																		    # Vuol dire che il file non è stato trovato
-		return 0
-	fi
+    check_file "${SOURCE_PATH}" "${2}"
+    RES=$?
+    if [[ $RES -ne 0 ]]; then
+        return 0
+    fi
 
-	echo ""
-	while [[ ${INSERT} == 0 ]]; do
-		
-		echo " Destination base path: ${DEST_DIR}"
-		echo ""
-		read -p " Insert destination path (absolute): " ABS_DEST_PATH
-		echo -e " Insered path: \e[33m${ABS_DEST_PATH}/.\e[0m"
-		read -p " Is that correct (y|n) ?  " CHOICE
-		echo ""
-		case ${CHOICE} in 
-			y|Y) INSERT=1
-				 if [ ! "${2}" "${ABS_DEST_PATH}" -a "${2}" == "-d" ]; then								# Se la cartella non esiste, la creo
-					echo -e "${INFO} Dir ${ABS_DEST_PATH} not existing. Creating..."
-					mkdir -p "${ABS_DEST_PATH}"
-					if [ $? -ne 0 ]; then
-						echo -e "${ERR} Creating dir ${ABS_DEST_PATH}. Exit..."
-						exit 1
-					else
-						echo -e "${SUCC} Dir ${ABS_DEST_PATH} successfully created."
-					fi
-				 else
-					echo -e "${INFO} ${ABS_DEST_PATH} exists."
-				 fi
-				 ;;
-			*) ;;
-		esac
-		echo ""
-	done
+    echo ""
+    while [[ ${INSERT} == 0 ]]; do
+        echo " Destination base path: ${DEST_DIR}"
+        echo ""
+        read -p " Insert destination path (absolute): " ABS_DEST_PATH
+        echo -e " Insered path: \e[33m${ABS_DEST_PATH}/.\e[0m"
+        read -p " Is that correct (y|n) ?  " CHOICE
+        echo ""
+        case ${CHOICE} in 
+            y|Y) INSERT=1
+                 if [ ! "${2}" "${ABS_DEST_PATH}" -a "${2}" == "-d" ]; then
+                    echo -e "${INFO} Dir ${ABS_DEST_PATH} not existing. Creating..."
+                    mkdir -p "${ABS_DEST_PATH}"
+                    if [ $? -ne 0 ]; then
+                        echo -e "${ERR} Creating dir ${ABS_DEST_PATH}. Exit..."
+                        exit 1
+                    else
+                        echo -e "${SUCC} Dir ${ABS_DEST_PATH} successfully created."
+                    fi
+                 else
+                    echo -e "${INFO} ${ABS_DEST_PATH} exists."
+                 fi
+                 ;;
+            *) ;;
+        esac
+        echo ""
+    done
 
-	cp -r "${SOURCE_DIR}/${1}" "${ABS_DEST_PATH}"
-	RES=$?
+    # Scansiona per .gitignore
+    local respect_gitignore="false"
+    local verbose="false"
+    
+    if scan_for_gitignore "${SOURCE_PATH}"; then
+        echo -e "${WARN} .gitignore files found in the directory structure."
+        echo ""
+        echo "Choose how to proceed:"
+        echo "1) Copy everything (ignore .gitignore rules)"
+        echo "2) Respect .gitignore rules"
+        echo "3) Respect .gitignore rules with verbose output"
+        echo ""
+        local valid_choice=false
+        while [ "${valid_choice}" = "false" ]; do
+            read -p "Your choice (1-3): " CHOICE
+            case ${CHOICE} in
+                1)  respect_gitignore="false"
+                    verbose="false"
+                    valid_choice=true
+                    ;;
+                2)  respect_gitignore="true"
+                    verbose="false"
+                    valid_choice=true
+                    ;;
+                3)  respect_gitignore="true"
+                    verbose="true"
+                    valid_choice=true
+                    ;;
+                *)  echo -e "${ERR} Invalid choice. Please select 1, 2, or 3."
+                    ;;
+            esac
+        done
+    fi
 
-	if [ $? -ne 0 ]; then
-		echo -e "${ERR} Copying ${1} to ${ABS_DEST_PATH}" 
-		echo -e "$(print_date): [ERR] Copying ${SOURCE_DIR}/${1} to ${ABS_DEST_PATH}" >> "${LOG_FILE}"
-		exit 2
-	else
-		echo -e "${SUCC} Data imported successfully" 
-		echo -e "$(print_date): [SUCC] Data imported successfully from ${SOURCE_DIR}/${1} to ${ABS_DEST_PATH}" >> "${LOG_FILE}"
-	fi	
+    # Usa la nuova funzione copy_files
+    copy_files "${SOURCE_PATH}" "${ABS_DEST_PATH}/$(basename "${SOURCE_PATH}")" "${respect_gitignore}" "${verbose}"
+    RES=$?
+
+    if [ $RES -ne 0 ]; then
+        echo -e "${ERR} Copying ${1} to ${ABS_DEST_PATH}" 
+        echo -e "$(print_date): [ERR] Copying ${SOURCE_PATH} to ${ABS_DEST_PATH}" >> "${LOG_FILE}"
+        exit 2
+    else
+        echo -e "${SUCC} Data imported successfully" 
+        echo -e "$(print_date): [SUCC] Data imported successfully from ${SOURCE_PATH} to ${ABS_DEST_PATH}" >> "${LOG_FILE}"
+    fi
+}
+
+# Copia ricorsivamente i file, con o senza rispetto del .gitignore
+# Usage:
+#   $ copy_files <source> <destination> <respect_gitignore> [verbose]
+function copy_files() {
+    local source="$1"
+    local destination="$2"
+    local respect_gitignore="$3"
+    local base_source="$(dirname "${source}")"
+    export VERBOSE="${4:-false}"
+    
+    # Se il path sorgente non esiste, esci
+    if [[ ! -e "${source}" ]]; then
+        echo -e "${ERR} Source path ${source} does not exist" >&2
+        return 1
+    fi
+    
+    # Se è un file
+    if [[ -f "${source}" ]]; then
+        if [ "${respect_gitignore}" = "false" ] || ! should_ignore "${source}" "${base_source}"; then
+            mkdir -p "$(dirname "${destination}")"
+            cp "${source}" "${destination}"
+            if [ "${VERBOSE}" = "true" ]; then
+                echo -e "${INFO} Copied file: ${source} -> ${destination}"
+            fi
+        fi
+    # Se è una directory
+    elif [[ -d "${source}" ]]; then
+        if [ "${respect_gitignore}" = "false" ] || ! should_ignore "${source}" "${base_source}"; then
+            mkdir -p "${destination}"
+            
+            # Itera su tutti gli elementi nella directory
+            while IFS= read -r -d '' item; do
+                local basename="$(basename "${item}")"
+                local new_dest="${destination}/${basename}"
+                
+                # Chiamata ricorsiva per ogni elemento
+                copy_files "${item}" "${new_dest}" "${respect_gitignore}" "${VERBOSE}"
+            done < <(find "${source}" -mindepth 1 -maxdepth 1 -print0)
+        fi
+    fi
 }
 
 # Mostra il contenuto della cartella passata come parametro
@@ -335,6 +412,116 @@ function print_header() {
     
     # Stampa l'header colorato
     echo -e "${BLUE}$padding_left $title $padding_right${NC}"
+}
+
+# Funzione per ottenere il percorso relativo
+# Usage:
+#   $ get_relative_path <path> <base>
+function get_relative_path() {
+    local path="$1"
+    local base="$2"
+    echo "${path#"${base}/"}"
+}
+
+
+# Funzione per scansionare una directory alla ricerca di file .gitignore
+# Usage:
+#   $ scan_for_gitignore <directory>
+function scan_for_gitignore() {
+    local directory="$1"
+    local gitignore_files=()
+    
+    echo -e "${INFO} Scanning directory structure for .gitignore files..."
+    echo ""
+    
+    while IFS= read -r -d '' file; do
+        gitignore_files+=("$file")
+    done < <(find "${directory}" -name ".gitignore" -type f -print0)
+    
+    if [ ${#gitignore_files[@]} -eq 0 ]; then
+        echo -e "${INFO} No .gitignore files found in the directory structure."
+        echo ""
+        return 1
+    else
+        echo -e "${WARN} Found ${#gitignore_files[@]} .gitignore file(s):"
+        echo ""
+        for file in "${gitignore_files[@]}"; do
+            echo -e "   - ${file}"
+            echo -e "     Contains the following patterns:"
+            echo ""
+            while IFS= read -r pattern || [[ -n "${pattern}" ]]; do
+                [[ "${pattern}" =~ ^[[:space:]]*# ]] && continue
+                [[ -z "${pattern}" ]] && continue
+                pattern="$(echo "${pattern}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+                echo -e "     * ${pattern}"
+            done < "${file}"
+            echo ""
+        done
+        return 0
+    fi
+}
+
+# Controlla se un path deve essere ignorato in base al .gitignore più vicino
+# Usage:
+#   $ should_ignore <path_to_check> <current_dir>
+function should_ignore() {
+    local path_to_check="$1"
+    local current_dir="$2"
+    local gitignore_file=""
+    local relative_path=""
+    
+    # Controlla se il path contiene una cartella .git
+    if [[ "${path_to_check}" =~ /\.git(/|$) ]]; then
+        if [ "${VERBOSE}" = "true" ]; then
+            echo -e "${INFO} Ignoring ${path_to_check} (Git directory)" >&2
+        fi
+        return 0
+    fi
+    
+    # Trova il .gitignore più vicino risalendo la struttura delle directory
+    local dir="${current_dir}"
+    while [[ -n "${dir}" && "${dir}" != "/" ]]; do
+        if [[ -f "${dir}/.gitignore" ]]; then
+            gitignore_file="${dir}/.gitignore"
+            relative_path="$(get_relative_path "${path_to_check}" "${dir}")"
+            break
+        fi
+        dir="$(dirname "${dir}")"
+    done
+    
+    # Se non è stato trovato alcun .gitignore, non ignorare il file
+    if [[ -z "${gitignore_file}" ]]; then
+        return 1
+    fi
+    
+    # Legge il .gitignore ed elabora ogni pattern
+    while IFS= read -r pattern || [[ -n "${pattern}" ]]; do
+        # Ignora commenti e linee vuote
+        [[ "${pattern}" =~ ^[[:space:]]*# ]] && continue
+        [[ -z "${pattern}" ]] && continue
+        
+        # Rimuove spazi iniziali e finali
+        pattern="$(echo "${pattern}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        
+        # Converte il pattern in una regex
+        local regex_pattern="${pattern}"
+        regex_pattern="$(echo "${regex_pattern}" | sed 's/\./\\./g')"  # Escape dei punti
+        regex_pattern="$(echo "${regex_pattern}" | sed 's/\*/.*/g')"   # * diventa .*
+        regex_pattern="$(echo "${regex_pattern}" | sed 's/\?/./g')"    # ? diventa .
+        
+        # Se il pattern inizia con /, rimuovilo per il matching relativo
+        regex_pattern="$(echo "${regex_pattern}" | sed 's/^\///')"
+        
+        # Verifica se il path corrisponde al pattern
+        if [[ "${relative_path}" =~ ^${regex_pattern}(/|$) ]]; then
+            if [ "${VERBOSE}" = "true" ]; then
+                echo -e "${INFO} Ignoring ${path_to_check} due to pattern ${pattern} in ${gitignore_file}" >&2
+            fi
+            return 0
+        fi
+    done < "${gitignore_file}"
+    
+    return 1
 }
 
 # ============================================ ENTRYPOINT ============================================
