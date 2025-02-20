@@ -43,7 +43,7 @@ function main_menu() {
 		echo ""
 		echo -e " \e[31me) Exit\e[0m"
 		echo ""
-		read -p " Choice: " CHOICE
+		read -p " Insert value: " CHOICE
 		echo ""
 
 		case ${CHOICE} in
@@ -96,7 +96,7 @@ function transfer_data_menu() {
 		echo ""
 		echo -e " \e[31mb) Back\e[0m"
 		echo ""
-		read -p "Chose: " CHOICE
+		read -p "Insert value: " CHOICE
 		echo ""
 		case "${CHOICE}" in
 			1)  
